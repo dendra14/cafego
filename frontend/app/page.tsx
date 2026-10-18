@@ -84,20 +84,50 @@ export default function Home() {
   };
 
   // 4. Logika ketika pembayaran akhirnya dikonfirmasi
-  const handleFinalCheckout = (method: string) => {
-    if (method === "kasir") {
-      alert(
-        "Sip! Pesanan dicatat. Silakan lakukan pembayaran di meja Kasir ya.",
-      );
-    } else if (method === "qris") {
-      alert(
-        "Pembayaran QRIS berhasil! Barista kami akan segera menyiapkan pesananmu.",
-      );
-    }
+  const handleFinalCheckout = async (method: string) => {
+    // 1. Membungkus pesanan ke dalam kotak paket (JSON) yang rapi
+    const orderPayload = {
+      payment_method: method,
+      total_amount: cart.reduce((sum, item) => sum + item.price * item.qty, 0),
+      items: cart.map((item) => ({
+        menu_id: item.id,
+        quantity: item.qty,
+        price: item.price,
+      })),
+    };
 
-    // Setelah sukses, kosongkan keranjang dan tutup modal
-    setCart([]);
-    setIsCheckoutOpen(false);
+    try {
+      // 2. Pelayan melempar paket pesanan ke Dapur (Laravel)
+      const response = await fetch("http://127.0.0.1:8000/api/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(orderPayload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Gagal terhubung ke dapur (server)");
+      }
+
+      // 3. Reaksi jika Dapur berhasil menerima paketnya
+      if (method === "kasir") {
+        alert(
+          "Sip! Pesanan tercatat di sistem. Silakan lakukan pembayaran di meja Kasir ya.",
+        );
+      } else if (method === "qris") {
+        alert(
+          "Pembayaran QRIS berhasil! Barista kami akan segera menyiapkan pesananmu.",
+        );
+      }
+
+      // Bersihkan meja (kosongkan keranjang) dan tutup panel
+      setCart([]);
+      setIsCheckoutOpen(false);
+    } catch (error: any) {
+      alert(`Waduh, koneksi terputus: ${error.message}`);
+    }
   };
 
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
