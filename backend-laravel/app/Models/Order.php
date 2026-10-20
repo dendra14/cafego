@@ -2,20 +2,25 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-// (Biasanya ada use HasFactory; di sini, tapi karena di punyamu tidak ada, kita sesuaikan saja)
 
 class Order extends Model
 {
-    // Tambahkan properti $fillable ini di dalam class
+    use HasFactory;
+
+    // Mendaftarkan kolom yang diizinkan untuk diisi secara otomatis (Mass Assignment)
     protected $fillable = [
+        'customer_name',
+        'table_number',
         'payment_method',
         'total_amount',
-        'status'
+        'status',
     ];
-    // Memberitahu Laravel bahwa 1 Order punya banyak OrderItem
+
+    // Relasi ke tabel order_items (Satu pesanan memiliki banyak rincian item)
     public function items()
     {
-        return $this->hasMany(OrderItem::class);
+        return $this->hasMany(OrderItem::class, 'order_id');
     }
 }
