@@ -28,8 +28,17 @@ export default function KasirPOS() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // STATE PENGAMAN: Mencegah klik ganda pada tombol selesai
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // STATE PENGAMAN BARU: Mencegah tumpukan request fetchOrders yang bikin lag
+  const [isFetching, setIsFetching] = useState(false);
 
   const fetchOrders = async () => {
+    if (isFetching) return; // Jika proses fetch sebelumnya belum selesai, abaikan dulu
+
+    setIsFetching(true);
     try {
       const response = await fetch("http://127.0.0.1:8000/api/orders");
       if (response.ok) {
@@ -46,28 +55,44 @@ export default function KasirPOS() {
     } catch (error) {
       console.error("Gagal menarik data antrean:", error);
     } finally {
+      setIsFetching(false);
       setIsLoading(false);
     }
   };
 
-  // Polling data dari backend setiap 3 detik
+  // Polling data dari backend setiap 10 detik secara aman (tidak menumpuk)
   useEffect(() => {
+    let isMounted = true;
+
     fetchOrders();
-    const interval = setInterval(fetchOrders, 3000);
-    return () => clearInterval(interval);
-  }, [selectedOrder]);
+
+    const interval = setInterval(async () => {
+      if (isMounted) {
+       await fetchOrders();
+      }
+    }, 10000);
+
+    return () => {
+     isMounted = false;
+      clearInterval(interval);
+   };
+ }, []);
 
   const handleSelesai = async (id: number) => {
+    if (isSubmitting) return;
+
     if (!confirm("Konfirmasi: Pesanan sudah siap diserahkan ke pelanggan?"))
       return;
 
-    // Optimistic UI: Hilangkan langsung dari layar agar terasa instan
-    setOrders((prevOrders) => prevOrders.filter((order) => order.id !== id));
-    if (selectedOrder?.id === id) {
-      setSelectedOrder(null);
-    }
-
     try {
+      setIsSubmitting(true);
+
+      // Optimistic UI: Hilangkan langsung dari layar agar terasa instan
+      setOrders((prevOrders) => prevOrders.filter((order) => order.id !== id));
+      if (selectedOrder?.id === id) {
+        setSelectedOrder(null);
+      }
+
       const response = await fetch(
         `http://127.0.0.1:8000/api/orders/${id}/selesai`,
         {
@@ -75,9 +100,13 @@ export default function KasirPOS() {
         },
       );
 
-      if (!response.ok) fetchOrders(); // Rollback jika gagal
+      if (!response.ok) {
+        fetchOrders(); // Rollback jika gagal
+      }
     } catch (error) {
       fetchOrders(); // Rollback jika error jaringan
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -117,7 +146,6 @@ export default function KasirPOS() {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      {/* Menampilkan Nama dan Meja dari Frontend Customer */}
                       <h3 className="text-lg font-black text-gray-800 truncate w-32">
                         {order.customer_name || "Tanpa Nama"}
                       </h3>
@@ -200,9 +228,16 @@ export default function KasirPOS() {
               <div className="pt-6 mt-4 border-t border-gray-100">
                 <button
                   onClick={() => handleSelesai(selectedOrder.id)}
-                  className="w-full bg-green-500 hover:bg-green-600 text-white text-xl font-black py-5 rounded-2xl shadow-lg transition-transform active:scale-95"
+                  disabled={isSubmitting}
+                  className={`w-full text-xl font-black py-5 rounded-2xl shadow-lg transition-transform active:scale-95 ${
+                    isSubmitting
+                      ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                      : "bg-green-500 hover:bg-green-600 text-white"
+                  }`}
                 >
-                  SELESAIKAN PESANAN (MEJA {selectedOrder.table_number})
+                  {isSubmitting
+                    ? "MEMPROSES..."
+                    : `SELESAIKAN PESANAN (MEJA ${selectedOrder.table_number})`}
                 </button>
               </div>
             </>

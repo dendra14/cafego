@@ -30,14 +30,14 @@ export default function CustomerPage() {
   const [paymentMethod, setPaymentMethod] = useState("qris");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // STATE BARU: Untuk melacak status loading dan error agar layar tidak cuma blank
+  // State Loading, Error, & Pop-up QRIS
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [showQrisModal, setShowQrisModal] = useState(false);
 
   useEffect(() => {
     fetchMenus();
 
-    // Ambil keranjang dari penyimpanan browser (Anti-Hilang)
     const savedCart = localStorage.getItem("cafego_cart");
     if (savedCart) {
       setCart(JSON.parse(savedCart));
@@ -52,45 +52,84 @@ export default function CustomerPage() {
     }
   }, [cart]);
 
-  // FUNGSI FETCH YANG SUDAH DIOPTIMASI
-  const fetchMenus = () => {
+  const fetchMenus = async () => {
     setIsLoading(true);
     setErrorMsg("");
 
-    // Catatan: Jika 127.0.0.1 tetap gagal, coba ganti menjadi localhost:8000
-    fetch("http://127.0.0.1:8000/api/menus")
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("Gagal terhubung ke server Laravel.");
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data.length === 0) {
-          setErrorMsg("Data menu kosong. Silakan isi tabel menus di Supabase.");
-        }
-        const formatted = data.map((item: any) => ({
-          ...item,
-          category: item.category || "Coffee",
-          description:
-            item.description ||
-            "Sajian premium kami yang dibuat dengan bahan-bahan pilihan.",
-          image:
-            item.image ||
-            "https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?w=500&h=400&fit=crop",
-          badge: item.stock <= 5 ? "STOK MENIPIS" : null,
-        }));
-        setMenus(formatted);
-      })
-      .catch((err) => {
-        console.error("Gagal memuat menu:", err);
-        setErrorMsg(
-          "Koneksi terputus. Pastikan server Laravel (php artisan serve) sedang menyala.",
-        );
-      })
-      .finally(() => {
-        setIsLoading(false);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/menus", {
+        next: { revalidate: 300 },
       });
+
+      if (!res.ok) {
+        throw new Error("Gagal terhubung ke server Laravel.");
+      }
+
+      const rawData = await res.json();
+
+      if (rawData.length === 0) {
+        setErrorMsg("Data menu kosong. Silahkan isi tabel menu di Supabase.");
+      } else {
+        const formatted = rawData.map((item: any) => {
+          let cat = item.category || "Coffee";
+          const nameLower = (item.name || "").toLowerCase();
+          const catLower = (item.category || "").toLowerCase();
+
+          // Pengelompokan Pintar Otomatis (Auto-Categorization)
+          if (
+            catLower === "minuman" ||
+            catLower === "drink" ||
+            catLower === "drinks"
+          ) {
+            if (
+              nameLower.includes("kopi") ||
+              nameLower.includes("coffee") ||
+              nameLower.includes("espresso") ||
+              nameLower.includes("macchiato") ||
+              nameLower.includes("latte") ||
+              nameLower.includes("americano")
+            ) {
+              cat = "Coffee";
+            } else {
+              cat = "Non Coffee";
+            }
+          } else if (catLower === "makanan" || catLower === "food") {
+            if (
+              nameLower.includes("cake") ||
+              nameLower.includes("croissant") ||
+              nameLower.includes("pastry") ||
+              nameLower.includes("roti") ||
+              nameLower.includes("donut") ||
+              nameLower.includes("cheesecake")
+            ) {
+              cat = "Pastries";
+            } else {
+              cat = "Food";
+            }
+          }
+
+          return {
+            ...item,
+            category: cat,
+            description:
+              item.description ||
+              "Sajian premium kami yang dibuat dengan bahan-bahan pilihan.",
+            image:
+              item.image ||
+              "https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?w=500&h=400&fit=crop",
+            badge: item.stock <= 5 ? "STOK MENIPIS" : null,
+          };
+        });
+        setMenus(formatted);
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMsg(
+        "Koneksi terputus. Pastikan server Laravel (php artisan serve) sedang menyala."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const categories = [
@@ -99,18 +138,28 @@ export default function CustomerPage() {
     "Non Coffee",
     "Pastries",
     "Food",
-    "Minuman",
-    "Makanan",
+    "Drink",
   ];
 
   const filteredMenus = menus.filter((item) => {
-    const matchCategory =
-      currentCategory === "All menu" ||
-      item.category.toLowerCase() === currentCategory.toLowerCase();
+    const itemCat = item.category.toLowerCase();
+    const currentCat = currentCategory.toLowerCase();
+
+    let matchCategory = false;
+
+    if (currentCategory === "All menu") {
+      matchCategory = true;
+    } else if (currentCat === "drink") {
+      matchCategory = itemCat === "coffee" || itemCat === "non coffee";
+    } else {
+      matchCategory = itemCat === currentCat;
+    }
+
     const matchSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.description &&
         item.description.toLowerCase().includes(searchTerm.toLowerCase()));
+
     return matchCategory && matchSearch;
   });
 
@@ -124,7 +173,7 @@ export default function CustomerPage() {
           return prevCart;
         }
         return prevCart.map((c) =>
-          c.id === menu.id ? { ...c, qty: c.qty + 1 } : c,
+          c.id === menu.id ? { ...c, qty: c.qty + 1 } : c
         );
       }
       return [...prevCart, { ...menu, qty: 1 }];
@@ -142,13 +191,13 @@ export default function CustomerPage() {
             }
             return item;
           })
-          .filter(Boolean) as CartItem[],
+          .filter(Boolean) as CartItem[]
     );
   };
 
   const totalAmount = cart.reduce(
     (sum, item) => sum + item.price * item.qty,
-    0,
+    0
   );
   const totalItemsCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const formatRp = (num: number) => "Rp " + num.toLocaleString("id-ID");
@@ -159,6 +208,15 @@ export default function CustomerPage() {
       return;
     }
 
+    if (paymentMethod === "qris") {
+      setShowQrisModal(true);
+      return;
+    }
+
+    executeOrderSubmission();
+  };
+
+  const executeOrderSubmission = async () => {
     setIsSubmitting(true);
 
     const orderData = {
@@ -186,6 +244,7 @@ export default function CustomerPage() {
         setCustomerName("");
         setTableNumber("");
         setIsCartOpen(false);
+        setShowQrisModal(false);
         fetchMenus();
       } else {
         alert("Gagal membuat pesanan. Silakan coba lagi.");
@@ -205,7 +264,6 @@ export default function CustomerPage() {
           <div className="w-10 h-10 bg-[#3e2723] text-[#fbf7f3] rounded-xl flex items-center justify-center shrink-0">
             <i className="ph ph-coffee text-2xl"></i>
           </div>
-          {/* NAMA SUDAH DIPERBAIKI MENJADI CafeGo */}
           <h1 className="font-serif font-bold text-2xl tracking-tight hidden sm:block">
             CafeGo
           </h1>
@@ -268,7 +326,7 @@ export default function CustomerPage() {
           ))}
         </div>
 
-        {/* TAMPILAN GRID MENU (DENGAN INDIKATOR LOADING & ERROR) */}
+        {/* TAMPILAN GRID MENU */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 min-h-[300px]">
           {isLoading ? (
             <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-400">
@@ -449,9 +507,62 @@ export default function CustomerPage() {
               <button
                 onClick={processCheckout}
                 disabled={cart.length === 0 || isSubmitting}
-                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all ${cart.length > 0 ? "bg-[#3e2723] hover:bg-[#a77b5a] active:scale-95" : "bg-gray-400"}`}
+                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all ${
+                  cart.length > 0
+                    ? "bg-[#3e2723] hover:bg-[#a77b5a] active:scale-95"
+                    : "bg-gray-400"
+                }`}
               >
-                {isSubmitting ? "Memproses..." : "Kirim Pesanan ke Dapur"}
+                {isSubmitting ? "Memproses..." : "Pesan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL QRIS INTERAKTIF */}
+      {showQrisModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 text-center space-y-4 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="font-serif font-bold text-2xl text-[#3e2723]">
+              Scan QRIS Pembayaran
+            </h3>
+            <p className="text-xs text-gray-500">
+              Silakan scan QR di bawah ini menggunakan m-Banking atau E-Wallet Anda.
+            </p>
+
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-center">
+              <img
+                src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=CafeGo-QRIS-Payment-Simulation"
+                alt="QRIS Code"
+                className="w-48 h-48 object-contain rounded-lg"
+              />
+            </div>
+
+            <div className="bg-[#fbf7f3] p-3 rounded-2xl border border-[#ebdccc]">
+              <p className="text-[10px] font-bold text-[#a77b5a] uppercase tracking-wider">
+                Total Tagihan
+              </p>
+              <p className="text-xl font-black text-[#3e2723]">
+                {formatRp(totalAmount)}
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowQrisModal(false)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl font-bold transition text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeOrderSubmission}
+                disabled={isSubmitting}
+                className="flex-1 bg-[#3e2723] hover:bg-[#a77b5a] text-white py-3 rounded-xl font-bold transition shadow-lg text-sm"
+              >
+                {isSubmitting ? "Memproses..." : "Sudah Bayar"}
               </button>
             </div>
           </div>

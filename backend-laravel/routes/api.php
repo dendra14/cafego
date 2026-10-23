@@ -5,6 +5,11 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\MenuController; // Sesuaikan jika controllermu bernama lain
 
+Route::get('/menus', [MenuController::class, 'index']);
+Route::post('/menus', [MenuController::class, 'store']);
+Route::patch('/menus/{id}/stock', [MenuController::class, 'updateStock']);
+Route::match(['put', 'patch'], '/menus/{id}', [MenuController::class, 'update']);
+
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
