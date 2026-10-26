@@ -30,3 +30,8 @@ Route::get('/orders', [OrderController::class, 'index']);  // Untuk Kasir/Owner 
 Route::put('/orders/{id}/selesai', [OrderController::class, 'markAsDone']); // INI YANG BARU: Untuk Kasir menyelesaikan pesanan
 
 Route::get('/orders/all', [OrderController::class, 'allOrders']);
+
+use App\Http\Controllers\AuthController;
+
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
